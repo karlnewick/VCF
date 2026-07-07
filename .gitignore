@@ -7,3 +7,8 @@
 /ESXi_Validation_and_Remediation_Report.csv
 /tools/ESXi_Validation_and_Remediation_Report.csv
 # Ignore restored/unused tools\ncreatedns.ps1
+CleanVMwareLogs.bat
+CleanWindowEvents.bat
+Pingsweep.ps1
+Test-VCFNetworks.ps1
+shutdown.bat
