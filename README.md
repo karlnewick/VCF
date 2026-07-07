@@ -4,7 +4,7 @@ Purpose
 - Validate and optionally remediate ESXi host networking, DNS, NTP, SSH, certificates, and readiness prior to VMware Cloud Foundation (VCF) 9.x bring-up.
 
 Quick summary
-- Script: [vcf_host_check.ps1](vcf_host_check.ps1)
+-- Script: [vcf_esxi_preflight.ps1](vcf_esxi_preflight.ps1)
 - Output: CSV report exported to `./ESXi_Validation_and_Remediation_Report.csv`
 
 Prerequisites
@@ -30,13 +30,13 @@ Usage examples
 
 ```powershell
 Set-Location 'C:\Users\karlnewick\OneDrive - WEI-LAB\Documents\Tools'
-.\vcf_host_check.ps1 -DebugOutput
+.\vcf_esxi_preflight.ps1 -DebugOutput
 ```
 
 - Apply remediation (use with caution):
 
 ```powershell
-.\vcf_host_check.ps1 -Remediate -DebugOutput
+.\vcf_esxi_preflight.ps1 -Remediate -DebugOutput
 ```
 
 Flags you may use
@@ -48,7 +48,7 @@ Flags you may use
 - `-DisableIPv6OnVmk0`: attempt to disable IPv6 via SSH and reboot.
 
 Where to look next
-- Script: [vcf_host_check.ps1](vcf_host_check.ps1)
+- Script: [vcf_esxi_preflight.ps1](vcf_esxi_preflight.ps1)
 - Report CSV: `./ESXi_Validation_and_Remediation_Report.csv`
 
 Contact / notes
