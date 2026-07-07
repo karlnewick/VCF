@@ -331,80 +331,19 @@ $PrecomputedTimeMap = @{}
 
 Write-Host "\nGathering host times (parallel where available) to avoid task interference..." -ForegroundColor DarkCyan
 
-if ($PSVersionTable.PSVersion.Major -ge 7) {
-    try {
-        # Use Start-ThreadJob for robust parallelism across PS editions
-        $jobs = @()
-        foreach ($h in $ESXiHosts) {
-            $j = Start-ThreadJob -Name $h -ArgumentList $h,$cred,$pass,$MaxAllowedDriftSeconds -ScriptBlock {
-                param($esxHost,$cred,$pass,$MaxAllowedDriftSeconds)
-                try { Import-Module VMware.VimAutomation.Core -ErrorAction SilentlyContinue } catch {}
-                Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false -Scope Session | Out-Null
-
-                $hostTime = $null
-                try {
-                    $session = Connect-VIServer -Server $esxHost -Credential $cred -ErrorAction Stop -WarningAction SilentlyContinue
-                    $vmhost = Get-VMHost -Server $session
-                    $view = Get-View -Id $vmhost.ExtensionData.MoRef -ErrorAction Stop
-                    if ($view -and $view.ConfigManager -and $view.ConfigManager.DateTimeSystem) {
-                        try { $dateSys = Get-View -Id $view.ConfigManager.DateTimeSystem -ErrorAction Stop; $dt = $dateSys.QueryDateTime(); if ($dt -is [datetime]) { $hostTime = $dt } elseif ($dt -is [string]) { $hostTime = [datetime]::Parse($dt) } elseif ($dt -ne $null -and $dt.PSObject.Properties['dateTime']) { $hostTime = [datetime]$dt.dateTime } else { $hostTime = [datetime]$dt } } catch {}
-                    }
-                } catch {}
-
-                if (-not $hostTime) {
-                    try {
-                        if (-not (Get-Module -ListAvailable -Name Posh-SSH)) { Install-Module Posh-SSH -Scope CurrentUser -Force -Confirm:$false -ErrorAction SilentlyContinue }
-                        Import-Module Posh-SSH -ErrorAction SilentlyContinue
-                        $secPass = ConvertTo-SecureString $pass -AsPlainText -Force
-                        $sshCred = New-Object PSCredential('root',$secPass)
-                        $sshSess = $null
-                        try { $sshSess = New-SSHSession -ComputerName $esxHost -Credential $sshCred -AcceptKey -Force -ErrorAction Stop } catch {}
-                        if ($sshSess) {
-                            $cmd = Invoke-SSHCommand -SessionId $sshSess.SessionId -Command "date +%s" -TimeOut 15 -ErrorAction SilentlyContinue
-                            if ($cmd) {
-                                $rawOut = if ($cmd.Output -is [System.Array]) { ($cmd.Output -join "`n").Trim() } else { $cmd.Output }
-                                $clean = ($rawOut -replace '[^0-9]','').Trim()
-                                if ($clean -and ($clean -match '^\d+$')) {
-                                    try { $epoch = [double]$clean; $hostTime = ([DateTimeOffset]::FromUnixTimeSeconds([long]$epoch)).ToLocalTime().DateTime } catch {}
-                                } else { try { $hostTime = [datetime]::Parse($rawOut) } catch {} }
-                            }
-                            try { Remove-SSHSession -SessionId $sshSess.SessionId | Out-Null } catch {}
-                        }
-                    } catch {}
-                }
-
-                if ($hostTime) { $localTime = Get-Date; $drift = [math]::Round([math]::Abs(($localTime - $hostTime).TotalSeconds),2); return [PSCustomObject]@{ HostName = $esxHost; HostTime = $hostTime; TimeDriftSeconds = $drift; TimeDriftOK = ($drift -le [int]$MaxAllowedDriftSeconds) } }
-                return [PSCustomObject]@{ HostName = $esxHost; HostTime = $null; TimeDriftSeconds = 'Unknown'; TimeDriftOK = 'Unknown' }
+# Fallback: sequential pre-flight collection to avoid complex parallel logic
+foreach ($esxHost in $ESXiHosts) {
+        $hostTime = $null
+        try {
+            $session = Connect-VIServer -Server $esxHost -Credential $cred -ErrorAction Stop -WarningAction SilentlyContinue
+            $vmhost = Get-VMHost -Server $session
+            $view = Get-View -Id $vmhost.ExtensionData.MoRef -ErrorAction Stop
+            if ($view -and $view.ConfigManager -and $view.ConfigManager.DateTimeSystem) {
+                try { $dateSys = Get-View -Id $view.ConfigManager.DateTimeSystem -ErrorAction Stop; $dt = $dateSys.QueryDateTime(); if ($dt -is [datetime]) { $hostTime = $dt } elseif ($dt -is [string]) { $hostTime = [datetime]::Parse($dt) } elseif ($dt -ne $null -and $dt.PSObject.Properties['dateTime']) { $hostTime = [datetime]$dt.dateTime } else { $hostTime = [datetime]$dt } } catch {}
             }
-            # Load example or user vars from tools/vars.ps1
-            $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-            $varsFile = Join-Path $scriptDir 'tools\vars.ps1'
-            $varsExample = Join-Path $scriptDir 'tools\vars.example.ps1'
-            if (Test-Path $varsFile) {
-                . $varsFile
-            } else {
-                if (Test-Path $varsExample) { . $varsExample }
-                Write-Host "Using tools/vars.example.ps1 — copy to tools/vars.ps1 and edit for your environment before running." -ForegroundColor Yellow
-            }
-
-            # Obtain credentials safely (avoid hard-coded passwords in public repos)
-            if (-not $cred) {
-                if ($env:VCF_ESXI_USER -and $env:VCF_ESXI_PASS) {
-                    $sec = ConvertTo-SecureString $env:VCF_ESXI_PASS -AsPlainText -Force
-                    $cred = New-Object System.Management.Automation.PSCredential($env:VCF_ESXI_USER,$sec)
-                } else {
-                    $cred = Get-Credential -UserName 'root' -Message 'Enter ESXi root credential'
-                }
-            }
-
-            $pass = $cred.GetNetworkCredential().Password
-                    } catch {
-                        # ignore and let SSH fallback handle it
-                    }
-                }
-            } catch {
-                Write-Host "  [PRE-FLIGHT] vSphere view read failed for $($esxHost): $($_)" -ForegroundColor DarkGray
-            }
+        } catch {
+            Write-Host ("  [PRE-FLIGHT] vSphere view read failed for {0}: {1}" -f $esxHost, $_) -ForegroundColor DarkGray
+        }
 
         if (-not $hostTime) {
             try {
@@ -418,28 +357,13 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                     $cmd = Invoke-SSHCommand -SessionId $sshSess.SessionId -Command "date +%s" -TimeOut 15 -ErrorAction SilentlyContinue
                     if ($cmd) {
                         $rawOut = if ($cmd.Output -is [System.Array]) { ($cmd.Output -join "`n").Trim() } else { $cmd.Output }
-                        $rawErr = if ($cmd.Error -is [System.Array]) { ($cmd.Error -join "`n").Trim() } else { $cmd.Error }
                         $clean = ($rawOut -replace '[^0-9]','').Trim()
-                        Write-Host "  [PRE-FLIGHT] SSH date output for $($esxHost): '$rawOut' -> cleaned '$clean'" -ForegroundColor DarkGray
-                        if ($rawErr) { Write-Host "  [PRE-FLIGHT] SSH date error for $($esxHost): '$rawErr'" -ForegroundColor DarkGray }
-
                         if ($clean -and ($clean -match '^\d+$')) {
-                            try {
-                                $epoch = [double]$clean
-                                try { $hostTime = ([DateTimeOffset]::FromUnixTimeSeconds([long]$epoch)).ToLocalTime().DateTime } catch { $hostTime = $null }
-                                Write-Host "  [PRE-FLIGHT] Parsed epoch for $($esxHost): $epoch -> $hostTime" -ForegroundColor DarkGray
-                            } catch {
-                                Write-Host "  [PRE-FLIGHT] Failed to parse epoch for $($esxHost): $_" -ForegroundColor Yellow
-                                try { $hostTime = [datetime]::Parse($rawOut) } catch { $hostTime = $null }
-                            }
-                        } else {
-                            try { $hostTime = [datetime]::Parse($rawOut) } catch { $hostTime = $null }
-                        }
+                            try { $epoch = [double]$clean; $hostTime = ([DateTimeOffset]::FromUnixTimeSeconds([long]$epoch)).ToLocalTime().DateTime } catch { $hostTime = $null }
+                        } else { try { $hostTime = [datetime]::Parse($rawOut) } catch { $hostTime = $null } }
                     }
                     try { Remove-SSHSession -SessionId $sshSess.SessionId | Out-Null } catch {}
-                } else {
-                    Write-Host "  [PRE-FLIGHT] Could not create SSH session for $esxHost." -ForegroundColor DarkGray
-                }
+                } else { Write-Host "  [PRE-FLIGHT] Could not create SSH session for $esxHost." -ForegroundColor DarkGray }
             } catch {}
         }
 
@@ -452,9 +376,8 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             Write-Host "  [PRE-FLIGHT] No time retrieved for $($esxHost); marking Unknown." -ForegroundColor DarkGray
             $PrecomputedTimeMap[$esxHost] = [PSCustomObject]@{ HostName = $esxHost; HostTime = $null; TimeDriftSeconds = 'Unknown'; TimeDriftOK = 'Unknown' }
         }
-    }
-}
 
+    }
 
 # =====================================================================
 # MAIN PROCESSING LOOP
