@@ -6,7 +6,8 @@
 # Ignore generated ESXi CSV reports
 /ESXi_Validation_and_Remediation_Report.csv
 /tools/ESXi_Validation_and_Remediation_Report.csv
-# Ignore restored/unused tools\ncreatedns.ps1
+# Ignore restored/unused tools
+createdns.ps1
 CleanVMwareLogs.bat
 CleanWindowEvents.bat
 Pingsweep.ps1
