@@ -3,3 +3,6 @@
 
 # Ignore generated CSV report
 /ESXi_Validation_and_Remediation_Report.csv
+# Ignore generated ESXi CSV reports
+/ESXi_Validation_and_Remediation_Report.csv
+/tools/ESXi_Validation_and_Remediation_Report.csv
