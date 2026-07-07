@@ -4,8 +4,9 @@ Purpose
 - Validate and optionally remediate ESXi host networking, DNS, NTP, SSH, certificates, and readiness prior to VMware Cloud Foundation (VCF) 9.x bring-up.
 
 Quick summary
--- Script: [vcf_esxi_preflight.ps1](vcf_esxi_preflight.ps1)
-- Output: CSV report exported to `./ESXi_Validation_and_Remediation_Report.csv`
+- Canonical script: [tools/vcf_esxi_preflight.ps1](tools/vcf_esxi_preflight.ps1)
+- Configuration: copy and edit [tools/vars.example.ps1](tools/vars.example.ps1) -> [tools/vars.ps1](tools/vars.ps1) (private)
+- Output: CSV report exported at runtime (ignored in repo via `.gitignore`)
 
 Prerequisites
 - Windows PowerShell 5.1 or PowerShell 7+ (PowerShell 7 recommended for improved parallelism).
@@ -18,18 +19,18 @@ Prerequisites
 Important notes
 - The script can perform destructive remediation (certificate regeneration, NTP changes, vSAN disk removal, network revert). Use `-Remediate` only when you intend to modify hosts.
 - The script temporarily enables SSH when required and restores previous state where possible.
-- Pre-flight host time collection is done in parallel (when available) to avoid later remediation changing host clocks.
+- Pre-flight host time collection is designed to avoid later remediation changing host clocks. The implementation prefers vSphere DateTimeSystem reads, falls back to SSH `date +%s`, and uses a robust conversion to compute time drift.
 
 Recent fixes and behavior
-- Replaced fragile `ForEach-Object -Parallel` usage with `Start-ThreadJob` for more robust parallel pre-flight collection across PowerShell editions.
-- Epoch conversion now uses `DateTimeOffset::FromUnixTimeSeconds(...)` to reliably convert `date +%s` output into host DateTime values.
+- Replaced fragile parallelization attempts with a robust sequential pre-flight collection to ensure consistent behavior across PowerShell editions and avoid parser/parameter-set issues.
+- Epoch conversion uses `DateTimeOffset::FromUnixTimeSeconds(...)` to reliably convert `date +%s` output into host DateTime values.
 - Precomputed host times are stored in a preflight map and used later for TimeDrift reporting where available.
 
 Usage examples
-- Dry-run with debug output:
+- Dry-run with debug output (run from the `tools` folder):
 
 ```powershell
-Set-Location 'C:\Users\karlnewick\OneDrive - WEI-LAB\Documents\Tools'
+Set-Location 'C:\Users\karlnewick\OneDrive - WEI-LAB\Documents\Tools\tools'
 .\vcf_esxi_preflight.ps1 -DebugOutput
 ```
 
@@ -48,9 +49,10 @@ Flags you may use
 - `-DisableIPv6OnVmk0`: attempt to disable IPv6 via SSH and reboot.
 
 Where to look next
-- Script: [vcf_esxi_preflight.ps1](vcf_esxi_preflight.ps1)
-- Report CSV: `./ESXi_Validation_and_Remediation_Report.csv`
+- Script: [tools/vcf_esxi_preflight.ps1](tools/vcf_esxi_preflight.ps1)
+- Example vars: [tools/vars.example.ps1](tools/vars.example.ps1)
+- Report CSV: generated at runtime (ignored in repo)
 
 Contact / notes
-- Edit the `ESXiHosts`, `CorrectDNS`, `CorrectNTP`, and `$Domain` variables at the top of the script to match your environment before running.
-- I updated the script to fix parallel pre-flight collection and epoch parsing; re-run with `-DebugOutput` to verify `TimeDriftSeconds` values are now populated.
+- Edit `tools/vars.ps1` (copy from `tools/vars.example.ps1`) to set `ESXiHosts`, `CorrectDNS`, `CorrectNTP`, `$Domain`, and other environment values before running.
+- I updated the script to fix pre-flight time collection and epoch parsing; re-run with `-DebugOutput` to verify `TimeDriftSeconds` values are now populated.
