@@ -30,7 +30,7 @@ Usage examples
 - Dry-run with debug output (run from the `tools` folder):
 
 ```powershell
-Set-Location 'C:\Users\karlnewick\OneDrive - WEI-LAB\Documents\Tools\tools'
+Set-Location '<path-to-cloned-repo>/tools'
 .\vcf_esxi_preflight.ps1 -DebugOutput
 ```
 
